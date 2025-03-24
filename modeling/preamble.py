@@ -102,10 +102,10 @@ visits = {
 systeminfo = {
     'duration (hr)': 3.5 * u.hr,
     'T_orb (d)': 8.463 * u.day,
-    'T_rot (d)': 4.863 * u.day,
-    'inclination': 88.5,
-    'eccentricity': 0.0,
-    'longitude_of_periastron': 89.0
+    'T_rot (d)': 4.86 * u.day,
+    'inclination': 89.5,
+    'eccentricity': 0.05,
+    'longitude_of_periastron': 88.4
 }
 
 WFC3_Median_Spectra = {
@@ -401,12 +401,6 @@ for key, paths in datasets.items():
         "lightcurve": load_lightcurve(paths["lightcurve"])
     }
 
-
-def ramp_model(r1=0,r2=0,r3=0,phase=None):
-    
-    ramp = 1. - np.exp(-r1 * phase + r2) + r3*phase
-
-    return ramp
     
 # def calculate_delta_D_spot(parameters, w):
     

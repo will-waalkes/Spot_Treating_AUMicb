@@ -7,8 +7,11 @@ import astropy.units as u
 from tensorflow_probability.substrates.jax.math import batch_interp_rectilinear_nd_grid as nd_interp
 
 
-def bt_settl_model_spectra(bin_wl):
-    paths = glob('/Users/wiwa8630/bt-settl/lte*.txt')
+def bt_settl_model_spectra(bin_wl, path=None):
+    if path is None:
+        path = '/Users/wiwa8630/bt-settl/lte*.txt'
+
+    paths = glob(path)
     bt_settl_temperature_grid = {}
 
     for i, path in enumerate(paths):
@@ -37,13 +40,13 @@ def bt_settl_model_spectra(bin_wl):
     return bt_settl_temperature_grid_keys, bt_settl_grid
 
 
-def get_interp_stellar_spectrum(bin_wl):
+def get_interp_stellar_spectrum(bin_wl, path=None):
 
-    bt_settl_temperature_grid_keys, bt_settl_grid = bt_settl_model_spectra(bin_wl)
+    bt_settl_temperature_grid_keys, bt_settl_grid = bt_settl_model_spectra(bin_wl, path)
 
     x_grid_points = (
-        bt_settl_temperature_grid_keys.astype(np.float32), 
-        bin_wl[:-1].astype(np.float32)
+        bt_settl_temperature_grid_keys.astype(jnp.float32), 
+        bin_wl[:-1].astype(jnp.float32)
     )
 
     @jit
@@ -52,12 +55,12 @@ def get_interp_stellar_spectrum(bin_wl):
         interp_point = jnp.column_stack([
             interp_temperature * ones,
             bin_wl[:-1]
-        ]).astype(np.float32)
+        ]).astype(jnp.float32)
 
         return nd_interp(
             interp_point,
             x_grid_points,
-            bt_settl_grid.astype(np.float32),
+            bt_settl_grid.astype(jnp.float32),
             axis=0
         )
 
