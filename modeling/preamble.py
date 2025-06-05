@@ -1,78 +1,83 @@
-import scipy.io
-from chromatic import plt, u, np
-from chromatic import *
-import pandas as pd
-import batman
-import lightkurve as lk
+import warnings
+warnings.filterwarnings("ignore", message="It appears that you're using a Mac with one of Apple's ARM-based processors")
+
+# We need to import numpyro first (though we use it last)
+import numpyro
+from numpyro.infer import MCMC, NUTS
+from numpyro import distributions as dist
+cpu_cores = 4
+numpyro.set_host_device_count(cpu_cores)
+
+import jax
+from jax import config
+config.update("jax_enable_x64", True)
+from jax import jit
+from jax.scipy.optimize import minimize
+from jax import random
+from jax.random import PRNGKey, split
+from jax import numpy as jnp
+from jax.scipy.signal import fftconvolve
+from jax.scipy.signal import convolve as jax_convolve
+
+import shone
+from shone.opacity.dace import download_molecule
+from shone.chemistry import FastchemWrapper
+from shone.chemistry import FastchemWrapper
+from shone.opacity import Opacity
+from shone.transmission import de_wit_seager_2013
+from shone.spectrum import bin_spectrum
+
+import fleck
+from fleck.jax import ActiveStar
+
 import lmfit
+from lmfit import Model, Parameters
+
+from specutils.manipulation import box_smooth, gaussian_smooth, trapezoid_smooth
+from specutils.spectra import Spectrum1D, SpectralRegion
+
+import scipy.io
+from scipy.optimize import fmin_powell, curve_fit
+from scipy.interpolate import interp1d
+from scipy.signal import correlate
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.gridspec import GridSpec
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize, to_hex
+
+from IPython.display import display
+from ipywidgets import interactive, VBox, HBox, FloatSlider
+
+import astropy.units as u
+import astropy.constants as c
+from astropy.constants import G, m_p
+from astropy.convolution import convolve, convolve_fft
+from astropy.convolution import Gaussian1DKernel
+
+import pandas as pd
 import emcee
 import random
 import os
 import corner
-from scipy.optimize import minimize
-
-from specutils.manipulation import box_smooth, gaussian_smooth, trapezoid_smooth
-
-from lmfit import Model, Parameters
-from scipy.interpolate import interp1d
-
-from ldtk import LDPSetCreator, BoxcarFilter
-import ldtk
-
+from chromatic import *
 from svo_filters import svo
-
-from specutils.spectra import Spectrum1D, SpectralRegion
-from specutils.fitting import fit_generic_continuum
-
-import jax
-from jax import numpy as jnp
-from jax import jit
-from jax.scipy.signal import fftconvolve
-import numpyro
-from numpyro import optim, distributions as dist
-
-from astropy.convolution import convolve, convolve_fft
-from astropy.convolution import Gaussian1DKernel
-
+import numpy as np
+import arviz
+import arviz as az
 from bt_settl import get_interp_stellar_spectrum
 
-import matplotlib.animation as animation
-
-from scipy.signal import correlate
-
-from scipy.optimize import curve_fit
-
-import astropy.constants as c
-# from RECTE import RECTE
-
-from matplotlib.gridspec import GridSpec
-from IPython.display import display
-from ipywidgets import interactive, VBox, HBox, FloatSlider
-
-from astropy.constants import m_p
-
-from shone.opacity import Opacity
-from shone.transmission import heng_kitzmann_2017, de_wit_seager_2013
-from shone.opacity.dace import download_molecule
-from shone.chemistry import FastchemWrapper, species_name_to_fastchem_name
-
-from expecto import get_spectrum
-from fleck.jax import ActiveStar, bin_spectrum
-
-from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize, to_hex
+species = ['H2O', 'CH4', 'CO2', 'CO','NH3']
 
 G_102_back_dict = scipy.io.readsav('../data/data_from_hannah/G102/Backward_spectra.sav', verbose=False)
 G_102_for_dict = scipy.io.readsav('../data/data_from_hannah/G102/Forward_spectra.sav', verbose=False)
 G_141_back_dict = scipy.io.readsav('../data/data_from_hannah/G141/Backward_spectra.sav', verbose=False)
 G_141_for_dict = scipy.io.readsav('../data/data_from_hannah/G141/Forward_spectra.sav', verbose=False)
 
-model_wavelengths = np.linspace(0.7,1.7,1500) * u.micron
+model_wavelengths = jnp.geomspace(0.3, 4, 10000) * u.micron
 btsettl_grid = get_interp_stellar_spectrum(model_wavelengths.value)
 btsettl_wavelengths = model_wavelengths.value[:-1]
-
-hst_orbital_period = 95.7 # minutes
-hst_per_in_days = hst_orbital_period * (1./60.) * (1./24.)
 
 visits = {
     'F21': {
@@ -131,6 +136,49 @@ WFC3_Median_Spectra = {
     }
 }
 
+# for visit in tqdm(['F21','S22']):
+#     for direction in ['Forward','Reverse']:
+
+#         # Prepare data for both directions
+#         exptime = visits[f'{visit}']['exp (s)']
+#         binwidth = visits[f'{visit}']['native resolution']
+#         grism = visits[f'{visit}']['Grism']
+        
+#         trimmed_r = read_rainbow(f"../data/{visit}_{direction}_trimmed_pacman_spec.rainbow.npy")
+    
+#         # Process forward direction data
+#         median_spectrum = trimmed_r.get_median_spectrum().value
+#         e_per_s = median_spectrum / exptime
+#         e_per_s_per_angstrom = e_per_s / binwidth
+#         _w, _s, _e = read_sensitivity_curve(grism=grism)
+#         binned_filter_response = bintogrid(_w.value, _s.value, newx=trimmed_r.wavelength.value)['y'] * u.cm**2 / u.erg
+#         calibrated_data_flux = e_per_s_per_angstrom / binned_filter_response
+            
+#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['w'] = trimmed_r.wavelength
+#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['f'] = calibrated_data_flux
+#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['e'] = 0.005 * calibrated_data_flux
+
+# F21F_rainbow = read_rainbow(f"../data/F21_Forward_trimmed_pacman_spec.rainbow.npy")
+# F21R_rainbow = read_rainbow(f"../data/F21_Reverse_trimmed_pacman_spec.rainbow.npy")
+# S22F_rainbow = read_rainbow(f"../data/S22_Forward_trimmed_pacman_spec.rainbow.npy")
+# S22R_rainbow = read_rainbow(f"../data/S22_Reverse_trimmed_pacman_spec.rainbow.npy")
+
+# File paths for Hannah's white light curves
+datasets = {
+    "F21_Backward": {
+        "lightcurve": "../data/AUMicb_F21_Backward_lightcurve_data.txt",
+    },
+    "F21_Forward": {
+        "lightcurve": "../data/AUMicb_F21_Forward_lightcurve_data.txt",
+    },
+    "S22_Backward": {
+        "lightcurve": "../data/AUMicb_S22_Backward_lightcurve_data.txt",
+    },
+    "S22_Forward": {
+        "lightcurve": "../data/AUMicb_S22_Forward_lightcurve_data.txt",
+    }
+}
+
 def convolve_spectrum(model_wavelength, model_flux, sigma, method='astropy', kernel_type = 'astropy'):
     """
     Convolve the high-res spectrum with a Gaussian kernel with 
@@ -174,8 +222,6 @@ def read_sensitivity_curve(grism='G141'):
 # plt.errorbar(w,s,yerr=e)
 # plt.xlabel(f'Wavelength ({w.unit})')
 # plt.ylabel(f'{s.unit}')
-
-# Define phoenix model wrappers:
 
 def calculate_logg(Rstar):
 
@@ -260,8 +306,6 @@ def phoenix_3T(parameters, sigma, convolution_method='astropy', kernel_type='ast
     
     return convolved
 
-# Define wrapper functions for BT-SETTL Models
-
 def btsettl_1T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
 
     T_phot = parameters['T_phot']
@@ -342,79 +386,159 @@ def initialize_walkers(nwalkers, params_config):
     
     return p0
 
-for visit in tqdm(['F21','S22']):
-    for direction in ['Forward','Reverse']:
-
-        # Prepare data for both directions
-        exptime = visits[f'{visit}']['exp (s)']
-        binwidth = visits[f'{visit}']['native resolution']
-        grism = visits[f'{visit}']['Grism']
-        
-        trimmed_r = read_rainbow(f"../data/{visit}_{direction}_trimmed_pacman_spec.rainbow.npy")
-    
-        # Process forward direction data
-        median_spectrum = trimmed_r.get_median_spectrum().value
-        e_per_s = median_spectrum / exptime
-        e_per_s_per_angstrom = e_per_s / binwidth
-        _w, _s, _e = read_sensitivity_curve(grism=grism)
-        binned_filter_response = bintogrid(_w.value, _s.value, newx=trimmed_r.wavelength.value)['y'] * u.cm**2 / u.erg
-        calibrated_data_flux = e_per_s_per_angstrom / binned_filter_response
-            
-        WFC3_Median_Spectra[f'{visit}'][f'{direction}']['w'] = trimmed_r.wavelength
-        WFC3_Median_Spectra[f'{visit}'][f'{direction}']['f'] = calibrated_data_flux
-        WFC3_Median_Spectra[f'{visit}'][f'{direction}']['e'] = 0.005 * calibrated_data_flux
-
-F21F_rainbow = read_rainbow(f"../data/F21_Forward_trimmed_pacman_spec.rainbow.npy")
-F21R_rainbow = read_rainbow(f"../data/F21_Reverse_trimmed_pacman_spec.rainbow.npy")
-S22F_rainbow = read_rainbow(f"../data/S22_Forward_trimmed_pacman_spec.rainbow.npy")
-S22R_rainbow = read_rainbow(f"../data/S22_Reverse_trimmed_pacman_spec.rainbow.npy")
-
-# File paths for Hannah's white light curves
-datasets = {
-    "F21_Backward": {
-        "lightcurve": "../data/AUMicb_F21_Backward_lightcurve_data.txt",
-    },
-    "F21_Forward": {
-        "lightcurve": "../data/AUMicb_F21_Forward_lightcurve_data.txt",
-    },
-    "S22_Backward": {
-        "lightcurve": "../data/AUMicb_S22_Backward_lightcurve_data.txt",
-    },
-    "S22_Forward": {
-        "lightcurve": "../data/AUMicb_S22_Forward_lightcurve_data.txt",
-    }
-}
-
 # Function to load lightcurve data
-def load_lightcurve(file_path):
+def load_lightcurve(file_path, **kwargs):
     return pd.read_csv(
         file_path, 
-        delim_whitespace=True, 
+        sep=r'\s+', 
         comment='#', 
         names=["MJD", "Flux", "Uncertainty", "Shift"]
     )
 
-# Example: Load all datasets
-sh_data = {}
-for key, paths in datasets.items():
-    sh_data[key] = {
-        "lightcurve": load_lightcurve(paths["lightcurve"])
-    }
+# Example: Load all sh datasets 
+# sh_data = {}
+# for key, paths in datasets.items():
+#     sh_data[key] = {
+#         "lightcurve": load_lightcurve(paths["lightcurve"])
+#     }
 
-    
-# def calculate_delta_D_spot(parameters, w):
-    
-#     f_spot, f_chord, T_spot, T_amb, transit_depth = parameters
-    
-#     S_spot = get_phoenix_photons(wavelength = w, temperature = T_spot, metallicity = 0.12, logg= 4.52)[1]
-#     S_amb = get_phoenix_photons(wavelength = w, temperature = T_amb, metallicity = 0.12, logg= 4.52)[1]
-    
-#     flux_ratio = S_spot/S_amb
-#     top = (1. - f_chord) + (f_chord * flux_ratio)
-#     bottom = (1. - f_spot) + (f_spot * flux_ratio)
-    
-#     delta_D_spot = ((top / bottom) - 1.) * transit_depth
-    
-#     depth_factor = (delta_D_spot/transit_depth) + 1.
+def get_BTSettl_spectrum(T, **kwargs):
 
-#     return delta_D_spot * 1e6
+    gridspec = btsettl_grid(jnp.array(T, dtype=jnp.float64))
+    lamb = btsettl_wavelengths * u.micron 
+
+    flux = gridspec * u.Unit('erg cm-2 s-1 AA-1') 
+
+    spec = Spectrum1D(spectral_axis=lamb, flux=flux)
+    
+    return spec
+
+def breathing_model(phase, b1, b2, b3, b4, **kwargs):
+
+    breathing = 1. + (b1 * phase) + (b2 * phase**2.) + (b3 * phase**3.) + (b4 * phase**4.)
+    
+    return breathing
+
+def ramp_model(phase, r1, r2, r3, **kwargs):
+    
+    ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
+
+    return ramp
+
+# https://shone.readthedocs.io/en/latest/shone/examples/transmission.html#general-transmission-spectra
+def transmission_spectrum_HengKitz17(log_atm_pressure = -1,
+                                     atm_temp = 600 * u.K,
+                                     log_kappa_cloud = -2,  # cloud opacity [cm2 / g]
+                                     mmw=2.5,
+                                     R_0=3.5 * u.R_earth,
+                                     M_p = 10.2 * u.M_earth, **kwargs):
+    """
+    Compute a transmission spectrum for an atmosphere
+    using the isothermal/isobaric approximation
+    from Heng & Kitzmann (2017).
+    """
+
+    P_0 = 10**log_atm_pressure
+    temperature = jnp.array([atm_temp.value])  # [K]
+    pressure = jnp.array([P_0]) # [bar]
+    chem = FastchemWrapper(temperature, pressure)
+    vmr = chem.vmr()
+    weights = chem.get_weights()
+
+    weighted_opacities = []
+    for i, spec in enumerate(species):
+        op = binned_opacities[i](atm_temp.value, P_0)[0]  # cm2 / g
+        col_idx = chem.get_column_index(species_name=spec)[0]
+        species_weight = weights[col_idx] / mmw
+    
+        abund_weighted_opacity = op * species_weight * vmr[:, col_idx]
+        weighted_opacities.append(abund_weighted_opacity)
+
+    total_mol_opacity = jnp.array(weighted_opacities).sum(axis=0)
+    
+    g = ( (c.G * M_p) / (R_0)**2 ).decompose() # surface gravity
+    
+    # compute the planetary radius as a function of wavelength:
+    Rp = heng_kitzmann_2017.transmission_radius_isothermal_isobaric(
+        total_mol_opacity + (10**log_kappa_cloud),
+        R_0.cgs.value, P_0, atm_temp, mmw, g.cgs.value
+    )
+
+    # convert to transit depth:
+    transit_depth_ppm = 1e6 * (Rp / (0.8*u.R_sun).cgs.value) ** 2
+        
+    return (Rp / (0.8*u.R_sun).cgs.value), transit_depth_ppm
+
+# Example Usage:
+
+# Rp, transit_depth_ppm = transmission_spectrum_HengKitz17()
+# plt.plot(wavelengths, Rp)
+
+@jit
+def convolve_spectrum_jax(model_wavelength, model_flux, sigma, method='fft', kernel_type='gaussian'):
+    """
+    JAX-compatible spectral convolution with a Gaussian kernel.
+    
+    Args:
+        model_wavelength: Wavelength array (must be uniformly spaced for accuracy).
+        model_flux: Flux array to convolve.
+        sigma: Standard deviation of Gaussian kernel (in pixels).
+        method: 'fft' (fast, default) or 'direct' (slower but more precise for small kernels).
+        kernel_type: 'gaussian' (default) or 'custom' (user-provided kernel).
+    
+    Returns:
+        Convolved flux array (same shape as input).
+    """
+    # Ensure inputs are JAX arrays
+    model_wavelength = jnp.asarray(model_wavelength)
+    model_flux = jnp.asarray(model_flux)
+    sigma = jnp.asarray(sigma)
+
+    # Generate Gaussian kernel
+    if kernel_type == 'gaussian':
+        # Create kernel centered at 0 with stddev `sigma`
+        kernel_size = jnp.minimum(10 * sigma, len(model_flux))  # Auto-size kernel
+        x = jnp.arange(-kernel_size // 2, kernel_size // 2 + 1)
+        kernel = jnp.exp(-0.5 * (x / sigma)**2)
+        kernel = kernel / jnp.sum(kernel)  # Normalize
+    
+    elif kernel_type == 'custom':
+        raise NotImplementedError("Custom kernels must be pre-computed and passed.")
+    
+    else:
+        raise ValueError(f"Unsupported kernel_type: {kernel_type}")
+
+    # Perform convolution
+    if method == 'fft':
+        convolved = jax_convolve(model_flux, kernel, mode='same', method='fft')
+    elif method == 'direct':
+        convolved = jax_convolve(model_flux, kernel, mode='same', method='direct')
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
+    return convolved
+
+@jit
+def get_BTSettl_spectrum_jax(T, **kwargs):
+
+    gridspec = btsettl_grid(jnp.array(T, dtype=jnp.float64))
+    wave_jax = jnp.array(btsettl_wavelengths)
+    flux_jax = jnp.array(gridspec)
+    
+    return wave_jax, flux_jax
+
+@jit
+def breathing_model_jax(phase, b1, b2, b3, b4, **kwargs):
+
+    phase = jnp.array(phase)
+    breathing = 1. + (b1 * phase) + (b2 * phase**2.) + (b3 * phase**3.) + (b4 * phase**4.)
+    
+    return jnp.array(breathing)
+
+@jit
+def ramp_model_jax(phase, r1, r2, r3, **kwargs):
+
+    phase = jnp.array(phase)
+    ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
+
+    return jnp.array(ramp)
