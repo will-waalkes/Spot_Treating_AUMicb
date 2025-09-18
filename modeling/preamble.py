@@ -5,8 +5,9 @@ warnings.filterwarnings("ignore", message="It appears that you're using a Mac wi
 import numpyro
 from numpyro.infer import MCMC, NUTS
 from numpyro import distributions as dist
-cpu_cores = 4
+cpu_cores = 7
 numpyro.set_host_device_count(cpu_cores)
+numpyro.set_platform("cpu")
 
 import jax
 from jax import config
@@ -25,13 +26,9 @@ from shone.chemistry import FastchemWrapper
 from shone.chemistry import FastchemWrapper
 from shone.opacity import Opacity
 from shone.transmission import de_wit_seager_2013
-from shone.spectrum import bin_spectrum
 
 import fleck
 from fleck.jax import ActiveStar
-
-import lmfit
-from lmfit import Model, Parameters
 
 from specutils.manipulation import box_smooth, gaussian_smooth, trapezoid_smooth
 from specutils.spectra import Spectrum1D, SpectralRegion
@@ -50,11 +47,12 @@ from matplotlib.colors import Normalize, to_hex
 from IPython.display import display
 from ipywidgets import interactive, VBox, HBox, FloatSlider
 
+from astropy.convolution import convolve, convolve_fft
+from astropy.convolution import Gaussian1DKernel
 import astropy.units as u
 import astropy.constants as c
 from astropy.constants import G, m_p
-from astropy.convolution import convolve, convolve_fft
-from astropy.convolution import Gaussian1DKernel
+from astropy.table import Table
 
 import pandas as pd
 import emcee
@@ -68,22 +66,17 @@ import arviz
 import arviz as az
 from bt_settl import get_interp_stellar_spectrum
 
+panchromatic_bin_edges = jnp.geomspace(0.3, 30, 5000)
+panchromatic_wavelengths = panchromatic_bin_edges[:-1] + jnp.diff(panchromatic_bin_edges)
+panchromatic_btsettl_grid = get_interp_stellar_spectrum(panchromatic_bin_edges)
+
 species = ['H2O', 'CH4', 'CO2', 'CO','NH3']
-
-G_102_back_dict = scipy.io.readsav('../data/data_from_hannah/G102/Backward_spectra.sav', verbose=False)
-G_102_for_dict = scipy.io.readsav('../data/data_from_hannah/G102/Forward_spectra.sav', verbose=False)
-G_141_back_dict = scipy.io.readsav('../data/data_from_hannah/G141/Backward_spectra.sav', verbose=False)
-G_141_for_dict = scipy.io.readsav('../data/data_from_hannah/G141/Forward_spectra.sav', verbose=False)
-
-model_wavelengths = jnp.geomspace(0.3, 4, 10000) * u.micron
-btsettl_grid = get_interp_stellar_spectrum(model_wavelengths.value)
-btsettl_wavelengths = model_wavelengths.value[:-1]
 
 visits = {
     'F21': {
         'Grism': 'G141',
-        'Forward': G_141_for_dict,
-        'Backward': G_141_back_dict,
+        # 'Forward': G_141_for_dict,
+        # 'Backward': G_141_back_dict,
         'BJD_times': np.array(pd.read_csv('../data/F21_bjdtimes.csv')['BJD'][:]) * u.day,
         'time_lower': 2459455.708 * u.day,
         'time_upper': 2459455.738 * u.day,
@@ -93,8 +86,8 @@ visits = {
     },
     'S22': {
         'Grism': 'G102',
-        'Forward': G_102_for_dict,
-        'Backward': G_102_back_dict,
+        # 'Forward': G_102_for_dict,
+        # 'Backward': G_102_back_dict,
         'BJD_times': np.array(pd.read_csv('../data/S22_bjdtimes.csv')['BJD'][:]) * u.day,
         'time_lower': 2459684.215 * u.day,
         'time_upper': 2459684.243 * u.day,
@@ -112,99 +105,6 @@ systeminfo = {
     'eccentricity': 0.05,
     'longitude_of_periastron': 88.4
 }
-
-WFC3_Median_Spectra = {
-    
-    "F21" : {
-        
-        "Forward" : {
-            "w" : None,"f" : None,"e" : None,
-        },
-        "Reverse" : {
-            "w" : None,"f" : None,"e" : None,
-        }
-    },
-    
-    "S22" : {
-
-        "Forward" : {
-            "w" : None,"f" : None,"e" : None,
-        },
-        "Reverse" : {
-            "w" : None,"f" : None,"e" : None,
-        }
-    }
-}
-
-# for visit in tqdm(['F21','S22']):
-#     for direction in ['Forward','Reverse']:
-
-#         # Prepare data for both directions
-#         exptime = visits[f'{visit}']['exp (s)']
-#         binwidth = visits[f'{visit}']['native resolution']
-#         grism = visits[f'{visit}']['Grism']
-        
-#         trimmed_r = read_rainbow(f"../data/{visit}_{direction}_trimmed_pacman_spec.rainbow.npy")
-    
-#         # Process forward direction data
-#         median_spectrum = trimmed_r.get_median_spectrum().value
-#         e_per_s = median_spectrum / exptime
-#         e_per_s_per_angstrom = e_per_s / binwidth
-#         _w, _s, _e = read_sensitivity_curve(grism=grism)
-#         binned_filter_response = bintogrid(_w.value, _s.value, newx=trimmed_r.wavelength.value)['y'] * u.cm**2 / u.erg
-#         calibrated_data_flux = e_per_s_per_angstrom / binned_filter_response
-            
-#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['w'] = trimmed_r.wavelength
-#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['f'] = calibrated_data_flux
-#         WFC3_Median_Spectra[f'{visit}'][f'{direction}']['e'] = 0.005 * calibrated_data_flux
-
-# F21F_rainbow = read_rainbow(f"../data/F21_Forward_trimmed_pacman_spec.rainbow.npy")
-# F21R_rainbow = read_rainbow(f"../data/F21_Reverse_trimmed_pacman_spec.rainbow.npy")
-# S22F_rainbow = read_rainbow(f"../data/S22_Forward_trimmed_pacman_spec.rainbow.npy")
-# S22R_rainbow = read_rainbow(f"../data/S22_Reverse_trimmed_pacman_spec.rainbow.npy")
-
-# File paths for Hannah's white light curves
-datasets = {
-    "F21_Backward": {
-        "lightcurve": "../data/AUMicb_F21_Backward_lightcurve_data.txt",
-    },
-    "F21_Forward": {
-        "lightcurve": "../data/AUMicb_F21_Forward_lightcurve_data.txt",
-    },
-    "S22_Backward": {
-        "lightcurve": "../data/AUMicb_S22_Backward_lightcurve_data.txt",
-    },
-    "S22_Forward": {
-        "lightcurve": "../data/AUMicb_S22_Forward_lightcurve_data.txt",
-    }
-}
-
-def convolve_spectrum(model_wavelength, model_flux, sigma, method='astropy', kernel_type = 'astropy'):
-    """
-    Convolve the high-res spectrum with a Gaussian kernel with 
-    stddev `sigma`. Then interpolate the result onto the wavelength
-    grid of the observations.
-    """
-    if kernel_type == 'astropy':
-        kernel = Gaussian1DKernel(stddev=sigma.value).array
-
-    if kernel_type == 'calculated':
-        kernel = jnp.exp(
-            -0.5 * (model_wavelength - jnp.mean(model_wavelength))**2 / 
-            sigma**2
-        )
-        kernel = kernel / jnp.sum(kernel)
-        
-    if method == 'JAX-fft':
-        convolved_model_flux = fftconvolve(model_flux, kernel, mode='same')
-
-    if method == 'astropy':
-        convolved_model_flux = convolve(model_flux, kernel)
-
-    if method == 'astropy-fft':    
-        convolved_model_flux = convolve_fft(model_flux, kernel)
-    
-    return convolved_model_flux
 
 def read_sensitivity_curve(grism='G141'):
     path = f'../data/WFC3.IR.{grism}.1st.sens.2.fits'
@@ -233,138 +133,6 @@ def calculate_logg(Rstar):
     
     return logg
 
-def phoenix_1T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    T_phot = parameters['T_phot']
-    rstar = parameters['R_star']
-    log_g = calculate_logg(rstar)
-    
-    S_phot = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_phot), metallicity = 0.12, logg=log_g)
-
-    E_per_photon = (3e10*6.626e-27)/(S_phot[0] * 1e-4) #ergs per photon
-    _f = S_phot[1] / (1e5 * u.angstrom * u.cm * u.cm * u.s) # converted from the phoenix units of photons/nm/m^2/s
-    _f = (_f * E_per_photon) * u.erg # now the model spectrum is in flux calibrated units
-    exclude_nans = ~np.isnan(_f)
-    model_wave = S_phot[0].value[exclude_nans]
-    model_flux = _f.value[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
-def phoenix_2T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    T_phot = parameters['T_phot']
-    T_spot = parameters['T_spot']
-    f_spot = parameters['f_spot']
-    rstar = parameters['R_star']
-    log_g = calculate_logg(rstar)
-    
-    S_spot = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_spot), metallicity = 0.12, logg = log_g)
-    S_phot = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_phot), metallicity = 0.12, logg = log_g)
-
-    # Calculate model spectrum
-    E_per_photon = (3e10*6.626e-27)/(S_phot[0] * 1e-4) #ergs per photon
-    _f = (f_spot*S_spot[1] + (1-f_spot)*S_phot[1]) / (1e5 * u.angstrom * u.cm * u.cm * u.s) # converted from the phoenix units of photons/nm/m^2/s
-    _f = (_f * E_per_photon) * u.erg # now the model spectrum is in flux calibrated units
-    exclude_nans = ~np.isnan(_f)
-    model_wave = S_spot[0].value[exclude_nans]
-    model_flux = _f.value[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
-def phoenix_3T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    T_phot = parameters['T_phot']
-    T_spot = parameters['T_spot']
-    T_other = parameters['T_other']
-    f_spot = parameters['f_spot']
-    f_phot = parameters['f_phot']
-    rstar = parameters['R_star']
-    
-    f_other = 1.0 - (f_spot + f_phot)
-    log_g = calculate_logg(rstar)
-    
-    S_spot = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_spot), metallicity = 0.12, logg= log_g)
-    S_phot = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_phot), metallicity = 0.12, logg= log_g)
-    S_other = get_phoenix_photons(wavelength = model_wavelengths,temperature = float(T_other), metallicity = 0.12, logg = log_g)
-
-    # Calculate model spectrum
-    E_per_photon = (3e10*6.626e-27)/(S_phot[0] * 1e-4) #ergs per photon
-    _f = (f_spot*S_spot[1] + f_phot*S_phot[1] + f_other * S_other[1]) / (1e5 * u.angstrom * u.cm * u.cm * u.s) # converted from the phoenix units of photons/nm/m^2/s
-    _f = (_f * E_per_photon) * u.erg # now the model spectrum is in flux calibrated units
-    exclude_nans = ~np.isnan(_f)
-    model_wave = S_spot[0].value[exclude_nans]
-    model_flux = _f.value[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
-def btsettl_1T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    T_phot = parameters['T_phot']
-    S_phot = btsettl_grid(float(T_phot))
-
-    # Calculate combined spectrum
-    _f = S_phot
-    exclude_nans = ~np.isnan(_f)
-    model_wave = btsettl_wavelengths[exclude_nans]
-    model_flux = _f[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
-def btsettl_2T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    f_spot = parameters['f_spot']
-    T_spot = parameters['T_spot']
-    T_phot = parameters['T_phot']
-    S_spot = btsettl_grid(float(T_spot))
-    S_phot = btsettl_grid(float(T_phot))
-
-    # Calculate combined spectrum
-    _f = (f_spot*S_spot + (1.0-f_spot)*S_phot)
-    exclude_nans = ~np.isnan(_f)    
-    model_wave = btsettl_wavelengths[exclude_nans]
-    model_flux = _f[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
-def btsettl_3T(parameters, sigma, convolution_method='astropy', kernel_type='astropy'):
-
-    T_phot = parameters['T_phot']
-    T_spot = parameters['T_spot']
-    T_other = parameters['T_other']
-    f_other = parameters['f_other']
-    f_spot = parameters['f_spot']
-    f_phot = 1.0 - (f_other + f_spot)
-    
-    S_spot = btsettl_grid(float(T_spot))
-    S_phot = btsettl_grid(float(T_phot))
-    S_other = btsettl_grid(float(T_other))
-    
-    # Calculate model spectrum
-    _f = (f_spot*S_spot + f_phot*S_phot + f_other*S_other)
-    exclude_nans = ~np.isnan(_f)
-    model_wave = btsettl_wavelengths[exclude_nans]
-    model_flux = _f[exclude_nans]
-    
-    # Convolve the model spectrum
-    convolved = convolve_spectrum(model_wave, model_flux, sigma=sigma, method = convolution_method, kernel_type = kernel_type)
-    
-    return convolved
-
 def initialize_walkers(nwalkers, params_config):
     """
     Initializes parameter values for MCMC walkers based on the given configuration.
@@ -385,33 +153,6 @@ def initialize_walkers(nwalkers, params_config):
     p0 = np.transpose(initial_params)
     
     return p0
-
-# Function to load lightcurve data
-def load_lightcurve(file_path, **kwargs):
-    return pd.read_csv(
-        file_path, 
-        sep=r'\s+', 
-        comment='#', 
-        names=["MJD", "Flux", "Uncertainty", "Shift"]
-    )
-
-# Example: Load all sh datasets 
-# sh_data = {}
-# for key, paths in datasets.items():
-#     sh_data[key] = {
-#         "lightcurve": load_lightcurve(paths["lightcurve"])
-#     }
-
-def get_BTSettl_spectrum(T, **kwargs):
-
-    gridspec = btsettl_grid(jnp.array(T, dtype=jnp.float64))
-    lamb = btsettl_wavelengths * u.micron 
-
-    flux = gridspec * u.Unit('erg cm-2 s-1 AA-1') 
-
-    spec = Spectrum1D(spectral_axis=lamb, flux=flux)
-    
-    return spec
 
 def breathing_model(phase, b1, b2, b3, b4, **kwargs):
 
@@ -474,58 +215,49 @@ def transmission_spectrum_HengKitz17(log_atm_pressure = -1,
 # Rp, transit_depth_ppm = transmission_spectrum_HengKitz17()
 # plt.plot(wavelengths, Rp)
 
-@jit
-def convolve_spectrum_jax(model_wavelength, model_flux, sigma, method='fft', kernel_type='gaussian'):
+def get_BTSettl_spectrum(T=3700, grid=panchromatic_btsettl_grid, w = panchromatic_bin_edges*u.micron,
+                         **kwargs):
+
+    panchromatic_gridspec = panchromatic_btsettl_grid(jnp.array(T, dtype=jnp.float64))
+    gridspec = grid(jnp.array(T, dtype=jnp.float64))
+    
+    # Calculate the normalization factor
+    nf = (c.sigma_sb*(T*u.K)**4 ) / ( np.trapz(panchromatic_gridspec, x=panchromatic_wavelengths*1e4) * u.Unit('erg cm-2 s-1') )
+    norm_factor = nf.decompose()
+    normed_flux = gridspec * norm_factor
+
+    flux = normed_flux * u.Unit('erg cm-2 s-1 AA-1')
+
+    spec = Spectrum1D(spectral_axis=w, flux=flux)
+    
+    return spec
+
+def convolve_spectrum(model_wavelength, model_flux, sigma, method='astropy', kernel_type = 'astropy'):
     """
-    JAX-compatible spectral convolution with a Gaussian kernel.
-    
-    Args:
-        model_wavelength: Wavelength array (must be uniformly spaced for accuracy).
-        model_flux: Flux array to convolve.
-        sigma: Standard deviation of Gaussian kernel (in pixels).
-        method: 'fft' (fast, default) or 'direct' (slower but more precise for small kernels).
-        kernel_type: 'gaussian' (default) or 'custom' (user-provided kernel).
-    
-    Returns:
-        Convolved flux array (same shape as input).
+    Convolve the high-res spectrum with a Gaussian kernel with 
+    stddev `sigma`. Then interpolate the result onto the wavelength
+    grid of the observations.
     """
-    # Ensure inputs are JAX arrays
-    model_wavelength = jnp.asarray(model_wavelength)
-    model_flux = jnp.asarray(model_flux)
-    sigma = jnp.asarray(sigma)
+    if kernel_type == 'astropy':
+        kernel = Gaussian1DKernel(stddev=sigma.value).array
 
-    # Generate Gaussian kernel
-    if kernel_type == 'gaussian':
-        # Create kernel centered at 0 with stddev `sigma`
-        kernel_size = jnp.minimum(10 * sigma, len(model_flux))  # Auto-size kernel
-        x = jnp.arange(-kernel_size // 2, kernel_size // 2 + 1)
-        kernel = jnp.exp(-0.5 * (x / sigma)**2)
-        kernel = kernel / jnp.sum(kernel)  # Normalize
+    if kernel_type == 'calculated':
+        kernel = jnp.exp(
+            -0.5 * (model_wavelength - jnp.mean(model_wavelength))**2 / 
+            sigma**2
+        )
+        kernel = kernel / jnp.sum(kernel)
+        
+    if method == 'JAX-fft':
+        convolved_model_flux = fftconvolve(model_flux, kernel, mode='same')
+
+    if method == 'astropy':
+        convolved_model_flux = convolve(model_flux, kernel)
+
+    if method == 'astropy-fft':    
+        convolved_model_flux = convolve_fft(model_flux, kernel)
     
-    elif kernel_type == 'custom':
-        raise NotImplementedError("Custom kernels must be pre-computed and passed.")
-    
-    else:
-        raise ValueError(f"Unsupported kernel_type: {kernel_type}")
-
-    # Perform convolution
-    if method == 'fft':
-        convolved = jax_convolve(model_flux, kernel, mode='same', method='fft')
-    elif method == 'direct':
-        convolved = jax_convolve(model_flux, kernel, mode='same', method='direct')
-    else:
-        raise ValueError(f"Unsupported method: {method}")
-
-    return convolved
-
-@jit
-def get_BTSettl_spectrum_jax(T, **kwargs):
-
-    gridspec = btsettl_grid(jnp.array(T, dtype=jnp.float64))
-    wave_jax = jnp.array(btsettl_wavelengths)
-    flux_jax = jnp.array(gridspec)
-    
-    return wave_jax, flux_jax
+    return convolved_model_flux
 
 @jit
 def breathing_model_jax(phase, b1, b2, b3, b4, **kwargs):
@@ -542,3 +274,442 @@ def ramp_model_jax(phase, r1, r2, r3, **kwargs):
     ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
 
     return jnp.array(ramp)
+
+def get_mcmc_samples(visit, model_designation, n_steps, n_bins, n_burnin, n_dim):
+    """
+    Read and return the trimmed and transposed MCMC samples for a given visit and model.
+    
+    Parameters:
+    -----------
+    visit : str
+        The visit identifier (e.g., 'visit01')
+    model_designation : str
+        The model designation used in the MCMC run
+    n_steps : int
+        Number of steps used in the MCMC run
+    n_bins : int
+        Number of bins used in the MCMC run (len(speclc_bin_edges)-1)
+    n_burnin : int
+        Number of burn-in steps to trim from the beginning
+    
+    Returns:
+    --------
+    numpy.ndarray
+        Trimmed and transposed samples array with shape (n_dim, n_samples)
+    """
+    # Construct the filename following the same pattern as in the MCMC setup
+    label = f'{visit}_{model_designation}_{n_steps}steps_{n_bins}bins_mcmc'
+    samples_fname = f"../data/samples/{label}.h5"
+    
+    try:
+        reader = emcee.backends.HDFBackend(samples_fname)
+        sampler = reader.get_chain(discard=int(0.5*n_steps), flat=True)
+        samples = sampler.reshape((-1, n_dim)).T
+        
+        return samples
+    
+    except Exception as e:
+        print(f"Error loading samples for {label}: {str(e)}")
+        return None
+
+default_params={
+
+    # Ramp Model Parameters
+    "r1": 18.1,
+    "r2": -6.7,
+    "r3": 0,
+    #Breathing params
+    "b1":0,
+    "b2":0,
+    "b3":0,
+    "b4":0,
+    "HST_period":0.066,
+
+    # Planet parameters
+    "Mp":8.0,
+    "planet_i":89.5,
+    "P_orb":8.463,
+    "t0":0.0,
+    "R0": 0.044,
+    "a_rstar": 18.5,
+    "ecc": 0.0,
+
+    # Stellar parameters
+    "log_g":4.5,
+    "stellar_i":85.0,
+    'P_rot':4.86,
+    "Rs":0.8,
+    "Ms":0.6,
+    "metallicity":0.0,
+    "log_fixedspot_radii":-1.6,
+    "f_cool_unocculted":0.2,
+    "f_cool_occulted":0.2,
+    "T_unocculted": 3100,
+    "T_occulted": 3500,
+    "T_phot": 3900,
+    "spot1_lon":-1.1,
+    "spot1_lat":1.2,
+    "spot1_rad":0.1,
+    "spot2_lon":0.875,
+    "spot2_lat":1.79,
+    "spot2_rad":0.07,
+    "spot3_lon":0.09,
+    "spot3_lat":1.48,
+    "spot3_rad":0.32,
+}
+
+F21_speclc_bin_edges = np.array([1.14064,
+1.16381,
+1.18234,
+1.20087,
+1.21477,
+1.23793,
+1.25647,
+1.28426,
+1.31669,
+1.33059,
+1.34449,
+1.35839,
+1.39082,
+1.40935,
+1.42325,
+1.43715,
+1.45568,
+1.47421,
+1.51127,
+1.5298,
+1.54834,
+1.5715,
+1.62246,
+1.645]) * u.micron
+
+F21_speclc_err_factor = np.array([1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.633	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.000	,
+1.861	,
+1.000	,
+1.000	,
+1.000	,
+2.008	,
+1.000	,])
+
+
+F21_SED_err_factor = np.array([1.00	,
+4.18	,
+3.59	,
+1.14	,
+1.00	,
+1.00	,
+1.41	,
+2.29	,
+1.00	,
+1.25	,
+1.13	,
+1.01	,
+1.00	,
+1.00	,
+2.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.81	,
+1.56	,
+1.00	,
+1.00	,
+1.12	,
+1.00	,
+1.13	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.29	,
+1.00	,
+1.00	,
+1.42	,
+1.07	,
+2.49	,
+6.44	,
+6.51	,
+1.88	,
+3.06	,
+1.00	,
+1.10	,
+1.00	,
+1.00	,
+1.51	,
+1.94	,
+1.00	,
+1.00	,
+1.00	,
+1.45	,
+1.65	,
+2.74	,
+1.00	,
+1.00	,
+1.44	,
+3.45	,
+1.00	,
+1.00	,
+1.49	,
+1.00	,
+1.07	,
+1.09	,
+1.25	,
+1.00	,
+1.54	,
+1.00	,
+1.44	,
+4.01	,
+1.67	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.37	,
+1.00	,
+1.00	,
+3.11	,
+1.00	,
+3.05	,
+1.00	,
+1.96	,
+1.67	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.22	,
+2.26	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.04	,
+1.09	,
+3.68	,
+1.07	,
+1.00	,
+2.71	,
+4.16	,
+2.09	,
+1.05	,
+1.38	,
+1.75	,
+2.53	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,])
+
+
+S22_speclc_bin_edges = np.array([0.805,
+0.81568514,
+0.82306047,
+0.8304358,
+0.8697709,
+0.87960467,
+0.88943845,
+0.90418911,
+0.91156444,
+0.92139821,
+0.93369043,
+0.94844109,
+0.96073331,
+0.96810864,
+0.97302553,
+0.97794241,
+0.98531775,
+1.01481907,
+1.02465284,
+1.03202817,
+1.03694506,
+1.04432039,
+1.05661261,
+1.06644638,
+1.07382171,
+1.10086459,
+1.11315681,
+1.12299059,
+1.13]) * u.micron
+
+S22_speclc_err_factor = np.array([1	,
+1	,
+1	,
+2.93	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.55	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+2.93	,
+1	,
+1	,
+1	,])
+
+S22_SED_err_factor = ([1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.17	,
+1.18	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.15	,
+1.10	,
+1.16	,
+1.27	,
+1.81	,
+1.86	,
+1.84	,
+1.13	,
+1.24	,
+1.33	,
+1.32	,
+1.64	,
+1.06	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.05	,
+1.00	,
+1.08	,
+1.01	,
+1.00	,
+1.06	,
+1.00	,
+1.00	,
+1.18	,
+1.00	,
+1.04	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.04	,
+1.35	,
+1.16	,
+1.01	,
+1.00	,
+1.02	,
+1.18	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.18	,
+1.41	,
+1.17	,
+1.00	,
+1.02	,
+1.00	,
+1.00	,
+1.00	,
+1.16	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.14	,
+1.78	,
+1.28	,
+1.00	,
+1.00	,
+1.00	,
+1.11	,
+1.67	,
+2.05	,
+1.24	,
+1.10	,
+1.11	,
+1.26	,
+1.24	,
+1.00	,
+1.13	,
+1.00	,
+1.13	,
+1.12	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.00	,
+1.19	,
+1.00	,
+1.06	,
+1.00	,
+1.00	,
+1.03	,
+1.00	,
+1.02	,
+1.02	,
+1.00	,
+1.00	,
+1.00	,
+1.16	,
+1.71	,
+2.64	,
+1.70	,
+1.00	,
+1.29	,
+1.73	,
+1.71	,
+1.16	,
+1.07	,
+1.00	,
+1.00	,
+1.00	,
+1.06	,
+1.11	,
+1.00	,
+1.20	,
+1.00	,
+1.15	,
+1.00	,
+1.00	,
+1.00	,])
