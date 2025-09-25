@@ -169,8 +169,8 @@ def transmission_spectrum_HengKitz17(log_atm_pressure = -1,
 def breathing_model_jax(phase, b1, b2, b3, b4):
 
     phase = jnp.array(phase)
-    breathing = 1. + (b1 * phase) + (b2 * phase**2.) + (b3 * phase**3.) + (b4 * phase**4.)
-    # breathing = _breathing/jnp.mean(_breathing)
+    _breathing = 1. + (b1 * phase) + (b2 * phase**2.) + (b3 * phase**3.) + (b4 * phase**4.)
+    breathing = _breathing/jnp.mean(_breathing)
     
     return jnp.array(breathing)
 
@@ -178,8 +178,9 @@ def breathing_model_jax(phase, b1, b2, b3, b4):
 def ramp_model_jax(phase, r1, r2, r3):
 
     phase = jnp.array(phase)
-    ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
-
+    _ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
+    ramp = _ramp/jnp.mean(_ramp)
+    
     return jnp.array(ramp)
 
 @jit
@@ -400,59 +401,25 @@ def post_batch_viz_save(self, **kwargs):
     print(f'Corner for checkpoint {self.checkpoint}')
     samples_cumulative = self.get_samples()
     corner.corner(samples_cumulative)
-
     plt.suptitle(f'checkpoint {self.checkpoint}')
     plt.savefig(f'chkpt_{self.checkpoint}_corner.png',dpi=200)
     plt.show()
 
+    # _result = arviz.from_numpyro(self)
+    # display(arviz.summary(_result))
+
+    # median_result = arviz.summary(result,focus='median')
+    # plot_params = {}
+
+    # plt.figure(figsize=(8,3))
+    # plt.errorbar(data_time,data_flux_data_err)
+    # plt.plot()
+    # plt.suptitle(f'checkpoint {self.checkpoint} Plot')
+    # plt.savefig(f'chkpt_{self.checkpoint}_model.png',dpi=200)
+    # plt.show()
+
     with open(f'samples_cumulative_{self.start_time}_checkpoint_{self.checkpoint:04d}.pkl', 'wb') as file:
         pickle.dump(dict(samples_cumulative), file)
-
-default_params={
-
-    # Ramp Model Parameters
-    "r1": 18.1,
-    "r2": -6.7,
-    "r3": 0,
-    #Breathing params
-    "b1":0,
-    "b2":0,
-    "b3":0,
-    "b4":0,
-    "HST_period":0.066,
-
-    # Planet parameters
-    "Mp":8.0,
-    "planet_i":89.5,
-    "P_orb":8.463,
-    "t0":0.0,
-    "R0": 0.044,
-    "a_rstar": 18.5,
-    "ecc": 0.0,
-
-    # Stellar parameters
-    "log_g":4.5,
-    "stellar_i":85.0,
-    'P_rot':4.86,
-    "Rs":0.82,
-    "Ms":0.6,
-    "metallicity":0.0,
-    "log_fixedspot_radii":-1.6,
-    "f_cool_unocculted":0.2,
-    "f_cool_occulted":0.2,
-    "T_unocculted": 3100,
-    "T_occulted": 3500,
-    "T_phot": 3900,
-    "spot1_lon":-1.1,
-    "spot1_lat":1.2,
-    "spot1_rad":0.1,
-    "spot2_lon":0.875,
-    "spot2_lat":1.79,
-    "spot2_rad":0.07,
-    "spot3_lon":0.09,
-    "spot3_lat":1.48,
-    "spot3_rad":0.32,
-}
 
 F21_speclc_bin_edges = np.array([1.14064,
 1.16381,
@@ -810,55 +777,55 @@ S22_SED_err_factor = ([1.00	,
 1.00	,
 1.00	,])
 
-jointvisit_speclc_bin_edges = jnp.array([0.805,
-0.81568514,
-0.82306047,
-0.8304358,
-0.8697709,
-0.87960467,
-0.88943845,
-0.90418911,
-0.91156444,
-0.92139821,
-0.93369043,
-0.94844109,
-0.96073331,
-0.96810864,
-0.97302553,
-0.97794241,
-0.98531775,
-1.01481907,
-1.02465284,
-1.03202817,
-1.03694506,
-1.04432039,
-1.05661261,
-1.06644638,
-1.07382171,
-1.10086459,
-1.11315681,
-1.12299059,
-1.135,
-1.16381,
-1.18234,
-1.20087,
-1.21477,
-1.23793,
-1.25647,
-1.28426,
-1.31669,
-1.33059,
-1.34449,
-1.35839,
-1.39082,
-1.40935,
-1.42325,
-1.43715,
-1.45568,
-1.47421,
-1.51127,
-1.5298,
-1.54834,
-1.5715,
-1.62246,
-1.645]) * u.micron
+# jointvisit_speclc_bin_edges = jnp.array([0.805,
+# 0.81568514,
+# 0.82306047,
+# 0.8304358,
+# 0.8697709,
+# 0.87960467,
+# 0.88943845,
+# 0.90418911,
+# 0.91156444,
+# 0.92139821,
+# 0.93369043,
+# 0.94844109,
+# 0.96073331,
+# 0.96810864,
+# 0.97302553,
+# 0.97794241,
+# 0.98531775,
+# 1.01481907,
+# 1.02465284,
+# 1.03202817,
+# 1.03694506,
+# 1.04432039,
+# 1.05661261,
+# 1.06644638,
+# 1.07382171,
+# 1.10086459,
+# 1.11315681,
+# 1.12299059,
+# 1.135,
+# 1.16381,
+# 1.18234,
+# 1.20087,
+# 1.21477,
+# 1.23793,
+# 1.25647,
+# 1.28426,
+# 1.31669,
+# 1.33059,
+# 1.34449,
+# 1.35839,
+# 1.39082,
+# 1.40935,
+# 1.42325,
+# 1.43715,
+# 1.45568,
+# 1.47421,
+# 1.51127,
+# 1.5298,
+# 1.54834,
+# 1.5715,
+# 1.62246,
+# 1.645]) * u.micron
