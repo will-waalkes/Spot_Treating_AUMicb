@@ -293,134 +293,6 @@ def get_binned_BTSettl_spectrum_jax(T, grid=panchromatic_btsettl_grid,data_wave=
     
     return data_wave, binned_flux
 
-rng_seed = 0
-
-def hstack_recursive(final_states, checkpoint_states):
-    for key in final_states.keys():
-        if isinstance(final_states[key], dict):
-            hstack_recursive(final_states[key], checkpoint_states[key])
-        else:
-            final_states[key] = jnp.hstack([
-                final_states[key], 
-                checkpoint_states[key]
-            ])
-
-def print_big_message(big_message):
-    print('\n\n')
-    print('=' * len(big_message))
-    print(big_message)
-    print('=' * len(big_message))
-    print('\n\n')
-
-class MCMCWithCheckpoints(MCMC):
-    running_states = None
-    checkpoint = 0
-    start_time = None
-    
-    def run_checkpoints(self, rng_key, *args, extra_fields=(), n_checkpoints=10, 
-                        progress_bar_warmup=True, progress_bar_samples=True, 
-                        init_params=None, on_checkpoint=None, **kwargs):
-        """
-        Run the MCMC samplers and collect samples.
-
-        :param random.PRNGKey rng_key: Random number generator key to be used for the sampling.
-            For multi-chains, a batch of `num_chains` keys can be supplied. If `rng_key`
-            does not have batch_size, it will be split in to a batch of `num_chains` keys.
-        :param args: Arguments to be provided to the :meth:`numpyro.infer.mcmc.MCMCKernel.init` method.
-            These are typically the arguments needed by the `model`.
-        :param extra_fields: Extra fields (aside from `"z"`, `"diverging"`) from the
-            state object (e.g. :data:`numpyro.infer.hmc.HMCState` for HMC) to be collected
-            during the MCMC run. Note that subfields can be accessed using dots, e.g.
-            `"adapt_state.step_size"` can be used to collect step sizes at each step. Exclude sample sites from
-            collection with "~`sampler.sample_field`.`sample_site`". e.g. "~z.a" will prevent site "a" from
-            being collected if you're using the NUTS sampler. To collect samples of a site "a" in the
-            unconstrained space, we can specify the variable here, e.g. `extra_fields=("z.a",)`.
-        :type extra_fields: tuple or list of str
-        :param init_params: Initial parameters to begin sampling. The type must be consistent
-            with the input type to `potential_fn` provided to the kernel. If the kernel is
-            instantiated by a numpyro model, the initial parameters here correspond to latent
-            values in unconstrained space.
-        :param kwargs: Keyword arguments to be provided to the :meth:`numpyro.infer.mcmc.MCMCKernel.init`
-            method. These are typically the keyword arguments needed by the `model`.
-
-        .. note:: jax allows python code to continue even when the compiled code has not finished yet.
-            This can cause troubles when trying to profile the code for speed.
-            See https://jax.readthedocs.io/en/latest/async_dispatch.html and
-            https://jax.readthedocs.io/en/latest/profiling.html for pointers on profiling jax programs.
-        """
-        self.start_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        num_warmup_total = int(self.num_warmup)
-        num_samples_total = int(self.num_samples)
-        
-        check_point_indices = [
-            jnp.arange(num_warmup_total), 
-            *jnp.array_split(jnp.arange(num_samples_total), n_checkpoints)
-        ]
-        n_checkpoints = len(check_point_indices)
-        rng_keys = random.split(rng_key, n_checkpoints)
-        pbar = tqdm(enumerate(zip(rng_keys, check_point_indices)), total=n_checkpoints)
-        for checkpoint, (rng_key, bounds) in pbar:
-            if checkpoint == 0:
-                self.progress_bar = progress_bar_warmup
-                pbar.set_description('Run warmup')
-                print_big_message("Begin warmup")
-                self.warmup(rng_key, *args, extra_fields=extra_fields, init_params=init_params, **kwargs)
-                print_big_message(f"Begin {num_samples_total} samples with {n_checkpoints} checkpoints")
-
-            else:
-                pbar.set_description(f'Run samples {bounds.min()} to {bounds.max()}')
-
-                self.progress_bar = progress_bar_samples
-                self.num_samples = bounds.size
-                self.run(rng_key, *args, extra_fields=extra_fields, init_params=init_params, **kwargs)
-
-                # add to running states:
-                if self.running_states is None:
-                    self.running_states = dict(self._states)
-                else:
-                    hstack_recursive(self.running_states, self._states)
-                
-                # ensure that calls to `self.get_samples` will build a new samples array
-                # out of the running states:
-                self._states_flat = None
-                self._states = self.running_states
-
-                if on_checkpoint is not None:
-                    on_checkpoint(self, **kwargs)
-                self.checkpoint += 1
-        
-        pbar.close()
-
-        # reset to total number for arviz IO
-        self.num_samples = num_samples_total
-
-def post_batch_viz_save(self, **kwargs):
-    """
-    here we define some tasks to do after each completed checkpoint:
-    """
-    print(f'Corner for checkpoint {self.checkpoint}')
-    samples_cumulative = self.get_samples()
-    corner.corner(samples_cumulative)
-    plt.suptitle(f'checkpoint {self.checkpoint}')
-    plt.savefig(f'chkpt_{self.checkpoint}_corner.png',dpi=200)
-    plt.show()
-
-    # _result = arviz.from_numpyro(self)
-    # display(arviz.summary(_result))
-
-    # median_result = arviz.summary(result,focus='median')
-    # plot_params = {}
-
-    # plt.figure(figsize=(8,3))
-    # plt.errorbar(data_time,data_flux_data_err)
-    # plt.plot()
-    # plt.suptitle(f'checkpoint {self.checkpoint} Plot')
-    # plt.savefig(f'chkpt_{self.checkpoint}_model.png',dpi=200)
-    # plt.show()
-
-    with open(f'samples_cumulative_{self.start_time}_checkpoint_{self.checkpoint:04d}.pkl', 'wb') as file:
-        pickle.dump(dict(samples_cumulative), file)
-
 F21_speclc_bin_edges = np.array([1.14064,
 1.16381,
 1.18234,
@@ -585,11 +457,7 @@ F21_SED_err_factor = np.array([1.00	,
 1.00	,])
 
 
-S22_speclc_bin_edges = np.array([0.805,
-0.81568514,
-0.82306047,
-0.8304358,
-0.8697709,
+S22_speclc_bin_edges = np.array([0.8697709,
 0.87960467,
 0.88943845,
 0.90418911,
@@ -615,10 +483,7 @@ S22_speclc_bin_edges = np.array([0.805,
 1.12299059,
 1.13]) * u.micron
 
-S22_speclc_err_factor = np.array([1	,
-1	,
-1	,
-2.93	,
+S22_speclc_err_factor = np.array([
 1.00	,
 1.00	,
 1.00	,
@@ -776,56 +641,3 @@ S22_SED_err_factor = ([1.00	,
 1.00	,
 1.00	,
 1.00	,])
-
-# jointvisit_speclc_bin_edges = jnp.array([0.805,
-# 0.81568514,
-# 0.82306047,
-# 0.8304358,
-# 0.8697709,
-# 0.87960467,
-# 0.88943845,
-# 0.90418911,
-# 0.91156444,
-# 0.92139821,
-# 0.93369043,
-# 0.94844109,
-# 0.96073331,
-# 0.96810864,
-# 0.97302553,
-# 0.97794241,
-# 0.98531775,
-# 1.01481907,
-# 1.02465284,
-# 1.03202817,
-# 1.03694506,
-# 1.04432039,
-# 1.05661261,
-# 1.06644638,
-# 1.07382171,
-# 1.10086459,
-# 1.11315681,
-# 1.12299059,
-# 1.135,
-# 1.16381,
-# 1.18234,
-# 1.20087,
-# 1.21477,
-# 1.23793,
-# 1.25647,
-# 1.28426,
-# 1.31669,
-# 1.33059,
-# 1.34449,
-# 1.35839,
-# 1.39082,
-# 1.40935,
-# 1.42325,
-# 1.43715,
-# 1.45568,
-# 1.47421,
-# 1.51127,
-# 1.5298,
-# 1.54834,
-# 1.5715,
-# 1.62246,
-# 1.645]) * u.micron
