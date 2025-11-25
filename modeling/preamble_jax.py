@@ -1,13 +1,54 @@
+import os
+import warnings
+import random
+import pickle
+from datetime import datetime
+from collections import defaultdict
+from functools import partial
+
+# Environment configuration
+os.environ['JAX_PLATFORMS'] = 'cpu'
+os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=8'
+
+import numpyro
+from numpyro import distributions as dist
+from numpyro.infer import MCMC, NUTS, log_likelihood, hmc
+from numpyro.infer.util import initialize_model
+from numpyro.util import fori_collect
+
 import jax
 from jax import config
 config.update("jax_enable_x64", True)
-from jax import jit
-from jax.scipy.optimize import minimize
-from jax import random
+config.update('jax_platform_name', 'cpu')
+
+import jax.numpy as jnp
+from jax import jit, pmap, devices, device_get, lax, local_device_count, random, vmap, block_until_ready
 from jax.random import PRNGKey, split
-from jax import numpy as jnp
+from jax.scipy.optimize import minimize
 from jax.scipy.signal import fftconvolve
 from jax.scipy.signal import convolve as jax_convolve
+
+# Check devices
+print('Available devices:', devices())
+print('CPU devices:', devices('cpu'))
+
+# Suppress warnings
+warnings.filterwarnings('ignore', message="It appears that you're using a Mac with one of Apple's ARM-based processors")
+
+import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib.gridspec import GridSpec
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize, to_hex
+import corner
+
+import astropy.units as u
+import astropy.constants as c
+from astropy.constants import G, m_p
+from astropy.table import Table
 
 import shone
 # from shone.opacity.dace import download_molecule
@@ -21,50 +62,26 @@ from fleck.jax import ActiveStar
 # from specutils.manipulation import box_smooth, gaussian_smooth, trapezoid_smooth
 # from specutils.spectra import Spectrum1D, SpectralRegion
 
-# import scipy.io
+# from scipy.io import *
 # from scipy.optimize import fmin_powell, curve_fit
 # from scipy.interpolate import interp1d
 # from scipy.signal import correlate
+from scipy.stats import gaussian_kde
 
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.gridspec import GridSpec
-from matplotlib.cm import ScalarMappable
-from matplotlib.colors import Normalize, to_hex
+# from astropy.convolution import convolve, convolve_fft
+# from astropy.convolution import Gaussian1DKernel
 
 # from IPython.display import display
 # from ipywidgets import interactive, VBox, HBox, FloatSlider
 
-# from astropy.convolution import convolve, convolve_fft
-# from astropy.convolution import Gaussian1DKernel
-import astropy.units as u
-import astropy.constants as c
-from astropy.constants import G, m_p
-from astropy.table import Table
-
-import pandas as pd
-import random
-import os
-import corner
 from chromatic import *
 from svo_filters import svo
-import numpy as np
-import arviz
-import arviz as az
 from bt_settl import get_interp_stellar_spectrum
 
-import pickle
-from collections import defaultdict
+import arviz
+import arviz as az
 
-from tqdm.auto import tqdm 
-from jax import device_get, jit, lax, local_device_count, pmap, random, vmap
-
-from functools import partial
-from numpyro.infer.util import initialize_model
-from numpyro.infer import MCMC, log_likelihood
-from numpyro.util import fori_collect
-from numpyro.infer.hmc import hmc
-from datetime import datetime
+from tqdm.auto import tqdm
 
 panchromatic_bin_edges = jnp.geomspace(0.3, 30, 5000)
 panchromatic_wavelengths = panchromatic_bin_edges[:-1] + jnp.diff(panchromatic_bin_edges)

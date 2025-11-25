@@ -9,7 +9,7 @@ from tensorflow_probability.substrates.jax.math import batch_interp_rectilinear_
 
 def bt_settl_model_spectra(bin_wl, path=None):
     if path is None:
-        path = '/Users/wiwa8630/bt-settl/lte*.txt'
+        path = '/Users/wiwa8630/model-spectra/bt-settl/lte*.txt'
 
     paths = glob(path)
     bt_settl_temperature_grid = {}
