@@ -204,3 +204,5 @@ modeling/plot_fleck.ipynb
 WFC3 Update May 8.key
 /modeling/01-processing/RECTE_modeling
 /modeling/00-sandbox
+modeling/bt_settl.py
+modeling/preamble_jax.py
