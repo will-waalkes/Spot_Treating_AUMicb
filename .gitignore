@@ -226,3 +226,4 @@ modeling/05-spec-lc/preamble_jax.py
 modeling/06-embedded-retrieval/bt_settl.py
 modeling/06-embedded-retrieval/preamble_emcee.py
 modeling/06-embedded-retrieval/preamble_jax.py
+modeling/preamble_emcee.py

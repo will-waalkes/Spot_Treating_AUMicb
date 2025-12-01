@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./modeling/04-broadband-lc/preamble_jax.py",
+        "./modeling/05-spec-lc/preamble_jax.py"
+    ]
+}
