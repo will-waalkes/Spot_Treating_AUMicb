@@ -227,3 +227,8 @@ modeling/06-embedded-retrieval/bt_settl.py
 modeling/06-embedded-retrieval/preamble_emcee.py
 modeling/06-embedded-retrieval/preamble_jax.py
 modeling/preamble_emcee.py
+/results
+modeling/04-broadband-lc/S22_whitelight_quantile_results.tex
+modeling/04-broadband-lc/S22_100000samples_12chains_3spots_whitelight_finalresults_summary.tex
+modeling/04-broadband-lc/S22_100000samples_12chains_3spots_whitelight_final-results-table.tex
+modeling/04-broadband-lc/F21_40000samples_12chains_3spots_whitelight_final-results-table.tex
