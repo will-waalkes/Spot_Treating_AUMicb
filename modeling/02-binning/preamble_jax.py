@@ -8,7 +8,7 @@ from functools import partial
 
 # Environment configuration
 os.environ['JAX_PLATFORMS'] = 'cpu'
-os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=12'
+os.environ['XLA_FLAGS'] = '--xla_force_host_platform_device_count=8'
 
 import numpyro
 from numpyro import distributions as dist
@@ -200,18 +200,6 @@ def ramp_model_jax(phase, r1, r2, r3):
     
     return jnp.array(ramp)
 
-def breathing_model(phase, b1, b2, b3, b4, **kwargs):
-
-    breathing = 1. + (b1 * phase) + (b2 * phase**2.) + (b3 * phase**3.) + (b4 * phase**4.)
-    
-    return breathing
-
-def ramp_model(phase, r1, r2, r3, **kwargs):
-    
-    ramp = 1. - jnp.exp( (-r1 * phase) + r2) + (r3 * phase)
-
-    return ramp
-
 @jit
 def linear_model_jax(x, m):
 
@@ -322,54 +310,58 @@ def get_binned_BTSettl_spectrum_jax(T, grid=panchromatic_btsettl_grid,data_wave=
     
     return data_wave, binned_flux
 
-F21_speclc_bin_edges = np.array([1.14064,
-1.16381,
-1.18234,
-1.20087,
-1.21477,
-1.23793,
-1.25647,
-1.28426,
-1.31669,
-1.33059,
-1.34449,
-1.35839,
-1.39082,
-1.40935,
-1.42325,
-1.43715,
-1.45568,
-1.47421,
-1.51127,
-1.5298,
-1.54834,
-1.5715,
-1.62246,
-1.645]) * u.micron
+F21_speclc_bin_edges = np.array([1.14296 ,
+1.15263 ,
+1.16318 ,
+1.18179 ,
+1.21123 ,
+1.22782 ,
+1.2374 ,
+1.25408 ,
+1.26804 ,
+1.28748 ,
+1.32515 ,
+1.33291 ,
+1.34682 ,
+1.37287 ,
+1.39266 ,
+1.40199 ,
+1.4164 ,
+1.43361 ,
+1.45982 ,
+1.48938 ,
+1.51175 ,
+1.53161 ,
+1.55509 ,
+1.56757 ,
+1.6138 ,
+1.63867 ,]) * u.micron
 
-F21_speclc_err_factor = np.array([1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.633	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.000	,
-1.861	,
-1.000	,
-1.000	,
-1.000	,
-2.008	,
-1.000	,])
+F21_speclc_err_factor = np.array([1.00	,
+1.07	,
+1.41	,
+2.17	,
+1.30	,
+1.00	,
+1.28	,
+1.18	,
+1.66	,
+1.86	,
+1.00	,
+1.21	,
+1.98	,
+1.51	,
+1.00	,
+1.27	,
+1.43	,
+1.89	,
+2.01	,
+1.72	,
+1.71	,
+1.61	,
+1.30	,
+2.54	,
+1.69	,])
 
 
 F21_SED_err_factor = np.array([1.00	,
