@@ -51,10 +51,10 @@ from astropy.constants import G, m_p
 from astropy.table import Table
 
 import shone
-# from shone.opacity.dace import download_molecule
-# from shone.chemistry import FastchemWrapper
-# from shone.opacity import Opacity
-# from shone.transmission import de_wit_seager_2013
+from shone.opacity.dace import download_molecule
+from shone.chemistry import FastchemWrapper
+from shone.opacity import Opacity
+from shone.transmission import de_wit_seager_2013
 
 import fleck
 from fleck.jax import ActiveStar
