@@ -234,4 +234,4 @@ modeling/04-broadband-lc/S22_100000samples_12chains_3spots_whitelight_final-resu
 modeling/04-broadband-lc/F21_40000samples_12chains_3spots_whitelight_final-results-table.tex
 /data/PACMAN
 modeling/02-binning/preamble_jax.py
-stuff-for-talks/
+stuff-for-talks
