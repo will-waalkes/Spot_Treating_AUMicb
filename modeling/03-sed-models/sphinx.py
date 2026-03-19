@@ -10,7 +10,7 @@ import re
 
 def sphinx_model_spectra(bin_wl, path=None):
     if path is None:
-        path = '/Users/wiwa8630/model-spectra/sphinx/SPECTRA/*_spectra.txt'
+        path = '/Users/waalkes/model-spectra/sphinx/SPECTRA/*_spectra.txt'
 
     paths = glob(path)
     
@@ -35,7 +35,7 @@ def sphinx_model_spectra(bin_wl, path=None):
             spectrum = pd.read_csv(
                 path,
                 comment='#',
-                delimiter='\s+',
+                delimiter=r'\s+',
                 names=['wavelength', 'flux']
             )
             
