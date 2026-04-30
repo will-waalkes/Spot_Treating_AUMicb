@@ -235,3 +235,5 @@ modeling/04-broadband-lc/F21_40000samples_12chains_3spots_whitelight_final-resul
 /data/PACMAN
 modeling/02-binning/preamble_jax.py
 .vscode/settings.json
+/stuff-for-talks
+/modeling/06-embedded-retrieval
